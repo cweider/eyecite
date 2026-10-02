@@ -1,6 +1,6 @@
 import re
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from typing import TypeVar, cast
 
 from eyecite.models import (
@@ -18,8 +18,7 @@ from eyecite.utils import strip_punct
 
 # type shorthand
 _SomeCitationT = TypeVar("_SomeCitationT", bound=CitationBase)
-ResolvedFullCite = tuple[FullCitation, ResourceType]
-ResolvedFullCites = list[ResolvedFullCite]
+_SomeResolutionT = TypeVar("_SomeResolutionT", bound=Hashable)
 
 
 # Skip id. citations that imply a page length longer than this,
@@ -61,10 +60,10 @@ def resolve_full_citation(full_citation: FullCitation) -> Resource:
 
 
 def _filter_by_matching_antecedent(
-    resolved_full_cites: ResolvedFullCites,
+    resolved_full_cites: list[tuple[FullCitation, _SomeResolutionT]],
     antecedent_guess: str,
-) -> ResourceType | None:
-    matches: list[ResourceType] = []
+) -> _SomeResolutionT | None:
+    matches: list[_SomeResolutionT] = []
     ag: str = strip_punct(antecedent_guess)
     for full_citation, resource in resolved_full_cites:
         if not isinstance(full_citation, FullCaseCitation):
@@ -84,11 +83,11 @@ def _filter_by_matching_antecedent(
 
 
 def _filter_by_matching_plaintiff_or_defendant_or_resolved_names(
-    resolved_full_cites: ResolvedFullCites,
+    resolved_full_cites: list[tuple[FullCitation, _SomeResolutionT]],
     reference_citation: ReferenceCitation,
-) -> ResourceType | None:
+) -> _SomeResolutionT | None:
     """Filter out reference citations that point to more than 1 Resource"""
-    matches: list[ResourceType] = []
+    matches: list[_SomeResolutionT] = []
 
     reference_values = set()
     for key in ReferenceCitation.name_fields:
@@ -147,8 +146,8 @@ def _has_invalid_pin_cite(
 
 def _resolve_shortcase_citation(
     short_citation: ShortCaseCitation,
-    resolved_full_cites: ResolvedFullCites,
-) -> ResourceType | None:
+    resolved_full_cites: list[tuple[FullCitation, _SomeResolutionT]],
+) -> _SomeResolutionT | None:
     """
     Try to match shortcase citations by checking whether their reporter and
     volume number matches those of any of the previously resolved full
@@ -156,7 +155,7 @@ def _resolve_shortcase_citation(
     checking whether their antecedent_guess appears in either the defendant
     or plaintiff field of any of the previously resolved full citations.
     """
-    candidates: ResolvedFullCites = []
+    candidates: list[tuple[FullCitation, _SomeResolutionT]] = []
     for full_citation, resource in resolved_full_cites:
         if (
             isinstance(full_citation, FullCaseCitation)
@@ -185,8 +184,8 @@ def _resolve_shortcase_citation(
 
 def _resolve_supra_citation(
     supra_citation: SupraCitation,
-    resolved_full_cites: ResolvedFullCites,
-) -> ResourceType | None:
+    resolved_full_cites: list[tuple[FullCitation, _SomeResolutionT]],
+) -> _SomeResolutionT | None:
     """
     Try to resolve supra citations by checking whether their antecedent_guess
     appears in either the defendant or plaintiff field of any of the
@@ -203,8 +202,8 @@ def _resolve_supra_citation(
 
 def _resolve_reference_citation(
     reference_citation: ReferenceCitation,
-    resolved_full_cites: ResolvedFullCites,
-) -> ResourceType | None:
+    resolved_full_cites: list[tuple[FullCitation, _SomeResolutionT]],
+) -> _SomeResolutionT | None:
     """Resolve reference citations
 
     Try to resolve reference citations by checking whether their is only one
@@ -226,9 +225,9 @@ def _resolve_reference_citation(
 
 def _resolve_id_citation(
     id_citation: IdCitation,
-    last_resolution: ResourceType,
-    resolutions: dict[ResourceType, list[_SomeCitationT]],
-) -> ResourceType | None:
+    last_resolution: _SomeResolutionT,
+    resolutions: dict[_SomeResolutionT, list[_SomeCitationT]],
+) -> _SomeResolutionT | None:
     """
     Resolve id citations to the resource of the previously resolved
     citation.
@@ -248,25 +247,25 @@ def _resolve_id_citation(
 def resolve_citations(
     citations: list[_SomeCitationT],
     resolve_full_citation: Callable[
-        [FullCitation], ResourceType
-    ] = resolve_full_citation,
+        [FullCitation], _SomeResolutionT
+    ],
     resolve_shortcase_citation: Callable[
-        [ShortCaseCitation, ResolvedFullCites],
-        ResourceType | None,
+        [ShortCaseCitation, list[tuple[FullCitation, _SomeResolutionT]]],
+        _SomeResolutionT | None,
     ] = _resolve_shortcase_citation,
     resolve_supra_citation: Callable[
-        [SupraCitation, ResolvedFullCites],
-        ResourceType | None,
+        [SupraCitation, list[tuple[FullCitation, _SomeResolutionT]]],
+        _SomeResolutionT | None,
     ] = _resolve_supra_citation,
     resolve_reference_citation: Callable[
-        [ReferenceCitation, ResolvedFullCites],
-        ResourceType | None,
+        [ReferenceCitation, list[tuple[FullCitation, _SomeResolutionT]]],
+        _SomeResolutionT | None,
     ] = _resolve_reference_citation,
     resolve_id_citation: Callable[
-        [IdCitation, ResourceType, dict[ResourceType, list[_SomeCitationT]]],
-        ResourceType | None,
+        [IdCitation, _SomeResolutionT, dict[_SomeResolutionT, list[_SomeCitationT]]],
+        _SomeResolutionT | None,
     ] = _resolve_id_citation,
-) -> dict[ResourceType, list[_SomeCitationT]]:
+) -> dict[_SomeResolutionT, list[_SomeCitationT]]:
     """Resolve a list of citations to their associated resources by matching
     each type of Citation object (FullCaseCitation, ShortCaseCitation,
     SupraCitation, and IdCitation) to a "resource" object. A "resource" could
@@ -310,13 +309,13 @@ def resolve_citations(
             to lists of `eyecite.models.CitationBase` objects (the values).
     """
     # Dict of all citation resolutions
-    resolutions: dict[ResourceType, list[_SomeCitationT]] = defaultdict(list)
+    resolutions: dict[_SomeResolutionT, list[_SomeCitationT]] = defaultdict(list)
 
     # Dict mapping full citations to their resolved resources
-    resolved_full_cites: ResolvedFullCites = []
+    resolved_full_cites: list[tuple[FullCitation, _SomeResolutionT]] = []
 
     # The resource of the most recently resolved citation, if any
-    last_resolution: ResourceType | None = None
+    last_resolution: _SomeResolutionT | None = None
 
     # Iterate over each citation and attempt to resolve it to a resource
     for citation in citations:
